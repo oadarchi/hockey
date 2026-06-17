@@ -407,7 +407,7 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
                         <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {!!p.guest && <span title="Svešais / +1" style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.guest ? "svešais" : `${p.pts} pts`}{isSuper ? ` · ⚡${skillOf(p)}` : ""}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.guest ? "svešais" : `${p.pts} pts`}</div>
                       </div>
                       {isAdmin && !!p.guest && (
                         <button title="Noņemt svešo" onClick={e => { e.stopPropagation(); removeGuest(p.id); }}
@@ -432,14 +432,9 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
                     <div className="slbl" style={{ marginBottom: 0 }}>
-                      {isSuper
-                        ? <>⬜ {teams.white.length} sp. (⚡{tSkill("white")}) · ⬛ {teams.black.length} sp. (⚡{tSkill("black")})
-                            {Math.abs(tSkill("white") - tSkill("black")) <= 2
-                              ? <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>
-                              : <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>Δ {Math.abs(tSkill("white") - tSkill("black"))} skill</span>}</>
-                        : <>⬜ {teams.white.length} sp. · ⬛ {teams.black.length} sp.
-                            {Math.abs(teams.white.length - teams.black.length) <= 1
-                              && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>}</>}
+                      ⬜ {teams.white.length} sp. · ⬛ {teams.black.length} sp.
+                      {Math.abs(teams.white.length - teams.black.length) <= 1
+                        && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>}
                     </div>
                     {isAdmin && (
                       <div style={{ display: "flex", gap: 8 }}>
@@ -460,15 +455,13 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
                               <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
                                 {!!p.guest && <span style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
                               </span>
-                              <span style={{ marginRight: isAdmin && side === "white" ? 4 : 0 }}>
-                                {isSuper ? <SkillChip value={skillOf(p)} /> : <span className="oswald" style={{ fontSize: 13, color: "var(--ice)" }}>{p.pts}</span>}
-                              </span>
+                              <span className="oswald" style={{ fontSize: 13, color: "var(--ice)", marginRight: isAdmin && side === "white" ? 4 : 0 }}>{p.pts}</span>
                               {isAdmin && side === "white" && <button className="btn btn-sm btn-o" style={{ padding: "3px 8px" }} onClick={() => swap(p.id, "white")}>→</button>}
                             </div>
                           ))}
                           <div style={{ margin: "8px 14px 4px", paddingTop: 8, borderTop: "1px solid var(--bdr)", fontSize: 12, color: "var(--muted)", display: "flex", justifyContent: "space-between" }}>
-                            <span>{isSuper ? "Σ skill:" : "Kopā:"}</span>
-                            <span className="oswald" style={{ color: isSuper ? "var(--gold)" : "var(--ice)" }}>{isSuper ? `⚡${tSkill(side)}` : `${tPts(side)} pts`}</span>
+                            <span>Kopā:</span>
+                            <span className="oswald" style={{ color: "var(--ice)" }}>{tPts(side)} pts</span>
                           </div>
                         </div>
                       </div>
