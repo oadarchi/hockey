@@ -707,11 +707,25 @@ function Admin({ seasonId, isSuper, allPlayers, onPlayersChange, allGames, onGam
   const [eid, setEid] = useState(null), [ed, setEd] = useState({});
   const [np, setNp] = useState({ name: "", positions: ["F"], skill: SKILL_DEFAULT });
   const [q, setQ] = useState("");
+  const [sort, setSort] = useState({ key: "pts", dir: "desc" });
   const [gmEdit, setGmEdit] = useState(null), [gwv, setGwv] = useState(""), [gbv, setGbv] = useState("");
   const [newSeason, setNewSeason] = useState({ name: "", start_date: "", end_date: "" });
   const [msg, setMsg] = useState("");
 
-  const fp = allPlayers.filter(p => p.name.toLowerCase().includes(q.toLowerCase()));
+  const sortVal = (p, key) => key === "name" ? p.name.toLowerCase() : key === "skill" ? skillOf(p) : p.pts;
+  const toggleSort = key => setSort(s => s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" ? "asc" : "desc" });
+  const fp = allPlayers
+    .filter(p => p.name.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => {
+      const va = sortVal(a, sort.key), vb = sortVal(b, sort.key);
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+  const SortTh = ({ k, label, cls }) => (
+    <th className={cls} onClick={() => toggleSort(k)} style={{ cursor: "pointer", userSelect: "none" }} title="Šķirot">
+      {label}{sort.key === k ? <span style={{ marginLeft: 4, color: "var(--blue)" }}>{sort.dir === "asc" ? "▲" : "▼"}</span> : <span style={{ marginLeft: 4, opacity: .3 }}>↕</span>}
+    </th>
+  );
   const flash = m => { setMsg(m); setTimeout(() => setMsg(""), 3000); };
 
   const savePlayer = async () => {
@@ -768,7 +782,7 @@ function Admin({ seasonId, isSuper, allPlayers, onPlayersChange, allGames, onGam
           <div className="card">
             <div style={{ overflowX: "auto" }}>
               <table className="tbl">
-                <thead><tr><th>Spēlētājs</th><th>Pozīcija</th><th>Skill</th><th className="r">Punkti</th><th>Statuss</th><th>Darbības</th></tr></thead>
+                <thead><tr><SortTh k="name" label="Spēlētājs" /><th>Pozīcija</th><SortTh k="skill" label="Skill" /><SortTh k="pts" label="Punkti" cls="r" /><th>Statuss</th><th>Darbības</th></tr></thead>
                 <tbody>
                   {fp.map(p => (
                     <tr key={p.id}>
