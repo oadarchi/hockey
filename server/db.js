@@ -163,7 +163,15 @@ if (!seasonExists) {
     ["Ingars Vārtsargs",   "G",  1, 1, 0, 0],
   ];
 
-  const insertPlayer = db.prepare("INSERT INTO players (name, position, positions, skill) VALUES (?, ?, ?, ?)");
+  // Ad-hoc guest / "+1 svešais" entries: [name, position, pts, gp, wins, draws]
+  // Excluded from standings (guest = 1), kept for point history.
+  const GUESTS = [
+    ["No dīķa čata",   "F", 3, 1, 1, 0],
+    ["Prizmas krekls", "F", 1, 1, 0, 0],
+    ["Dāvis Ansons",   "F", 1, 1, 0, 0], // 2nd Dāvis Ansons (sheet row 50)
+  ];
+
+  const insertPlayer = db.prepare("INSERT INTO players (name, position, positions, skill, guest) VALUES (?, ?, ?, ?, ?)");
   const insertStats  = db.prepare(`
     INSERT INTO player_stats (player_id, season_id, pts, gp, wins, draws, losses)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -172,7 +180,12 @@ if (!seasonExists) {
   const insertAll = db.transaction(() => {
     for (const [name, pos, pts, gp, wins, draws] of PLAYERS) {
       const skill = Math.max(1, Math.min(10, Math.round(pts / 3) || 5));
-      const p = insertPlayer.run(name, pos, pos, skill);
+      const p = insertPlayer.run(name, pos, pos, skill, 0);
+      insertStats.run(p.lastInsertRowid, seasonId, pts, gp, wins, draws, gp - wins - draws);
+    }
+    for (const [name, pos, pts, gp, wins, draws] of GUESTS) {
+      const skill = Math.max(1, Math.min(10, Math.round(pts / 3) || 1));
+      const p = insertPlayer.run(name, pos, pos, skill, 1);
       insertStats.run(p.lastInsertRowid, seasonId, pts, gp, wins, draws, gp - wins - draws);
     }
   });
