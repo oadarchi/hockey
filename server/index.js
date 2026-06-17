@@ -9,6 +9,7 @@ const db       = require("./db");
 const app  = express();
 const PORT = process.env.PORT || 3001;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "volvo2026";
+const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD || "developer2026";
 const SESSION_SECRET = process.env.SESSION_SECRET || "dike-secret-2026";
 const IS_PROD = process.env.NODE_ENV === "production";
 
@@ -30,14 +31,21 @@ if (IS_PROD) {
   app.use(express.static(path.join(__dirname, "../client/dist")));
 }
 
-// Auth middleware — attaches isAdmin to req
+// Auth middleware — attaches role / isAdmin / isSuper to req
 function authInfo(req, res, next) {
-  req.isAdmin = req.session?.isAdmin === true;
+  req.role    = req.session?.role || null;           // 'admin' | 'super' | null
+  req.isSuper = req.role === "super";
+  req.isAdmin = req.role === "admin" || req.isSuper; // super is also an admin
   next();
 }
 
 function requireAdmin(req, res, next) {
-  if (!req.session?.isAdmin) return res.status(401).json({ error: "Nav atļauts" });
+  if (!req.isAdmin) return res.status(401).json({ error: "Nav atļauts" });
+  next();
+}
+
+function requireSuper(req, res, next) {
+  if (!req.isSuper) return res.status(403).json({ error: "Nepieciešama superadmin piekļuve" });
   next();
 }
 
@@ -47,9 +55,13 @@ app.use(authInfo);
 
 app.post("/api/auth/login", (req, res) => {
   const { password } = req.body;
+  if (password === SUPERADMIN_PASSWORD) {
+    req.session.role = "super";
+    return res.json({ ok: true, role: "super" });
+  }
   if (password === ADMIN_PASSWORD) {
-    req.session.isAdmin = true;
-    return res.json({ ok: true });
+    req.session.role = "admin";
+    return res.json({ ok: true, role: "admin" });
   }
   res.status(401).json({ error: "Nepareiza parole" });
 });
@@ -60,7 +72,7 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 app.get("/api/auth/status", (req, res) => {
-  res.json({ isAdmin: req.isAdmin });
+  res.json({ isAdmin: req.isAdmin, isSuper: req.isSuper, role: req.role });
 });
 
 // ── Seasons ───────────────────────────────────────────────────────────────────
@@ -105,13 +117,25 @@ app.post("/api/seasons", requireAdmin, (req, res) => {
   res.json({ id: seasonId, name, start_date, end_date, active: 1 });
 });
 
+// Delete a season (superadmin only) — removes its games, lineups and stats
+app.delete("/api/seasons/:id", requireSuper, (req, res) => {
+  const id = +req.params.id;
+  db.transaction(() => {
+    db.prepare(`DELETE FROM game_players WHERE game_id IN (SELECT id FROM games WHERE season_id = ?)`).run(id);
+    db.prepare("DELETE FROM games        WHERE season_id = ?").run(id);
+    db.prepare("DELETE FROM player_stats WHERE season_id = ?").run(id);
+    db.prepare("DELETE FROM seasons      WHERE id = ?").run(id);
+  })();
+  res.json({ ok: true });
+});
+
 // ── Players ───────────────────────────────────────────────────────────────────
 
 // Get all players with stats for a given season
 app.get("/api/players", (req, res) => {
   const seasonId = req.query.season_id || getActiveSeason()?.id;
   const rows = db.prepare(`
-    SELECT p.id, p.name, p.position, p.active,
+    SELECT p.id, p.name, p.position, p.positions, p.skill, p.active,
            COALESCE(ps.pts,    0) AS pts,
            COALESCE(ps.gp,     0) AS gp,
            COALESCE(ps.wins,   0) AS wins,
@@ -119,6 +143,7 @@ app.get("/api/players", (req, res) => {
            COALESCE(ps.losses, 0) AS losses
     FROM   players p
     LEFT JOIN player_stats ps ON ps.player_id = p.id AND ps.season_id = ?
+    WHERE  p.guest = 0
     ORDER  BY ps.pts DESC, p.name
   `).all(seasonId);
   res.json(rows);
@@ -126,22 +151,48 @@ app.get("/api/players", (req, res) => {
 
 // Add player
 app.post("/api/players", requireAdmin, (req, res) => {
-  const { name, position = "F" } = req.body;
+  const { name, positions, position, skill } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: "Vārds ir obligāts" });
-  const p = db.prepare("INSERT INTO players (name, position) VALUES (?, ?)").run(name.trim(), position);
-  res.json({ id: p.lastInsertRowid, name: name.trim(), position, active: 1, pts: 0, gp: 0, wins: 0, draws: 0, losses: 0 });
+  const pos = normalizePositions(positions, position);
+  const sk  = clampSkill(skill);
+  const p = db.prepare("INSERT INTO players (name, position, positions, skill) VALUES (?, ?, ?, ?)")
+    .run(name.trim(), pos.primary, pos.list, sk);
+  res.json({ id: p.lastInsertRowid, name: name.trim(), position: pos.primary, positions: pos.list,
+             skill: sk, active: 1, guest: 0, pts: 0, gp: 0, wins: 0, draws: 0, losses: 0 });
+});
+
+// Add a guest / "+1 svešais" ad-hoc player (game-local, excluded from standings)
+app.post("/api/players/guest", requireAdmin, (req, res) => {
+  const { name, positions, position, skill } = req.body;
+  const pos  = normalizePositions(positions, position || "F");
+  const sk   = clampSkill(skill);
+  const nm   = (name?.trim()) || "Svešais";
+  const p = db.prepare("INSERT INTO players (name, position, positions, skill, guest, active) VALUES (?, ?, ?, ?, 1, 1)")
+    .run(nm, pos.primary, pos.list, sk);
+  res.json({ id: p.lastInsertRowid, name: nm, position: pos.primary, positions: pos.list,
+             skill: sk, active: 1, guest: 1, pts: 0 });
 });
 
 // Update player
 app.patch("/api/players/:id", requireAdmin, (req, res) => {
-  const { name, position, active, pts, season_id } = req.body;
+  const { name, positions, position, active, pts, skill, season_id } = req.body;
   const id = +req.params.id;
 
-  if (name !== undefined || position !== undefined || active !== undefined) {
-    const p = db.prepare("SELECT * FROM players WHERE id = ?").get(id);
-    if (!p) return res.status(404).json({ error: "Nav atrasts" });
-    db.prepare("UPDATE players SET name = ?, position = ?, active = ? WHERE id = ?")
-      .run(name ?? p.name, position ?? p.position, active ?? p.active, id);
+  const p = db.prepare("SELECT * FROM players WHERE id = ?").get(id);
+  if (!p) return res.status(404).json({ error: "Nav atrasts" });
+
+  if (name !== undefined || positions !== undefined || position !== undefined || active !== undefined) {
+    const pos = (positions !== undefined || position !== undefined)
+      ? normalizePositions(positions, position ?? p.position)
+      : { primary: p.position, list: p.positions };
+    db.prepare("UPDATE players SET name = ?, position = ?, positions = ?, active = ? WHERE id = ?")
+      .run(name ?? p.name, pos.primary, pos.list, active ?? p.active, id);
+  }
+
+  // Skill is a superadmin-only setting
+  if (skill !== undefined) {
+    if (!req.isSuper) return res.status(403).json({ error: "Skill maina tikai superadmins" });
+    db.prepare("UPDATE players SET skill = ? WHERE id = ?").run(clampSkill(skill, p.skill), id);
   }
 
   // Update season stats (pts override from admin)
@@ -153,6 +204,17 @@ app.patch("/api/players/:id", requireAdmin, (req, res) => {
     `).run(id, season_id, pts);
   }
 
+  res.json({ ok: true });
+});
+
+// Delete a player (superadmin only) — also clears their lineup/stats
+app.delete("/api/players/:id", requireSuper, (req, res) => {
+  const id = +req.params.id;
+  db.transaction(() => {
+    db.prepare("DELETE FROM game_players WHERE player_id = ?").run(id);
+    db.prepare("DELETE FROM player_stats  WHERE player_id = ?").run(id);
+    db.prepare("DELETE FROM players       WHERE id = ?").run(id);
+  })();
   res.json({ ok: true });
 });
 
@@ -188,13 +250,13 @@ app.get("/api/games/:id", (req, res) => {
   if (!game) return res.status(404).json({ error: "Nav atrasta" });
 
   const teamPlayers = db.prepare(`
-    SELECT p.id, p.name, p.position, gp.team,
+    SELECT p.id, p.name, p.position, p.positions, p.skill, p.guest, gp.team,
            COALESCE(ps.pts, 0) AS pts
     FROM   game_players gp
     JOIN   players p   ON p.id = gp.player_id
     LEFT JOIN player_stats ps ON ps.player_id = p.id AND ps.season_id = ?
     WHERE  gp.game_id = ?
-    ORDER  BY gp.team, ps.pts DESC
+    ORDER  BY gp.team, p.skill DESC, ps.pts DESC
   `).all(game.season_id, game.id);
 
   res.json({
@@ -257,7 +319,12 @@ app.post("/api/games/:id/result", requireAdmin, (req, res) => {
   const g = db.prepare("SELECT * FROM games WHERE id = ?").get(id);
   if (!g) return res.status(404).json({ error: "Nav atrasta" });
 
-  const lineup = db.prepare("SELECT * FROM game_players WHERE game_id = ?").all(id);
+  const lineup = db.prepare(`
+    SELECT gp.player_id, gp.team, p.guest
+    FROM   game_players gp
+    JOIN   players p ON p.id = gp.player_id
+    WHERE  gp.game_id = ?
+  `).all(id);
 
   db.transaction(() => {
     // Update game result
@@ -284,6 +351,7 @@ app.post("/api/games/:id/result", requireAdmin, (req, res) => {
       `);
 
       for (const gp of lineup) {
+        if (gp.guest) continue; // guests don't accrue season stats
         const isWhite = gp.team === "white";
         const won  = (isWhite && ww) || (!isWhite && bw);
         const pts  = 1 + (won ? 2 : dr ? 1 : 0);
@@ -302,11 +370,11 @@ app.post("/api/games/:id/result", requireAdmin, (req, res) => {
 
 app.get("/api/seasons/:id/standings", (req, res) => {
   const rows = db.prepare(`
-    SELECT p.id, p.name, p.position,
+    SELECT p.id, p.name, p.position, p.positions,
            ps.pts, ps.gp, ps.wins, ps.draws, ps.losses
     FROM   player_stats ps
     JOIN   players p ON p.id = ps.player_id
-    WHERE  ps.season_id = ?
+    WHERE  ps.season_id = ? AND p.guest = 0
     ORDER  BY ps.pts DESC, ps.gp DESC
   `).all(+req.params.id);
   res.json(rows);
@@ -316,6 +384,25 @@ app.get("/api/seasons/:id/standings", (req, res) => {
 
 function getActiveSeason() {
   return db.prepare("SELECT * FROM seasons WHERE active = 1 ORDER BY id DESC LIMIT 1").get();
+}
+
+const VALID_POS = ["F", "D", "G"];
+
+// Normalize a positions input (array or "F,D" string) → { primary, list }
+function normalizePositions(positions, fallback) {
+  let list = Array.isArray(positions)
+    ? positions
+    : typeof positions === "string" && positions.trim()
+      ? positions.split(",")
+      : fallback ? [fallback] : ["F"];
+  list = [...new Set(list.map(s => String(s).trim().toUpperCase()).filter(p => VALID_POS.includes(p)))];
+  if (list.length === 0) list = ["F"];
+  return { primary: list[0], list: list.join(",") };
+}
+
+function clampSkill(v, def = 5) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.max(1, Math.min(10, n)) : def;
 }
 
 // Fallback to React app for client-side routing (production only)

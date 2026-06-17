@@ -27,7 +27,10 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS players (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL,
-    position    TEXT    NOT NULL DEFAULT 'F', -- F | D | G
+    position    TEXT    NOT NULL DEFAULT 'F', -- primary: F | D | G
+    positions   TEXT    NOT NULL DEFAULT 'F', -- all positions, comma list e.g. "F,D"
+    skill       INTEGER NOT NULL DEFAULT 5,   -- 1..10, team-balancing rating
+    guest       INTEGER NOT NULL DEFAULT 0,   -- 1 = "+1 / svešais" ad-hoc player
     active      INTEGER NOT NULL DEFAULT 1,
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
   );
@@ -68,6 +71,32 @@ db.exec(`
     UNIQUE(game_id, player_id)
   );
 `);
+
+// ── Migrations: add new columns to existing databases ────────────────────────
+
+function ensureColumn(table, col, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (cols.some(c => c.name === col)) return false;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  return true;
+}
+
+ensureColumn("players", "guest", "guest INTEGER NOT NULL DEFAULT 0");
+if (ensureColumn("players", "positions", "positions TEXT")) {
+  // backfill: a player's positions start as their existing single position
+  db.exec("UPDATE players SET positions = position WHERE positions IS NULL");
+}
+if (ensureColumn("players", "skill", "skill INTEGER")) {
+  // backfill skill from active-season points (≈ pts/3, clamped 1..10), default 5
+  db.exec(`
+    UPDATE players SET skill = MAX(1, MIN(10, COALESCE((
+      SELECT ROUND(ps.pts / 3.0)
+      FROM   player_stats ps
+      JOIN   seasons s ON s.id = ps.season_id AND s.active = 1
+      WHERE  ps.player_id = players.id
+    ), 5)))
+  `);
+}
 
 // ── Seed: season 2026 + all 47 players (only on first run) ───────────────────
 
@@ -134,7 +163,7 @@ if (!seasonExists) {
     ["Ingars Vārtsargs",   "G",  1, 1, 0, 0],
   ];
 
-  const insertPlayer = db.prepare("INSERT INTO players (name, position) VALUES (?, ?)");
+  const insertPlayer = db.prepare("INSERT INTO players (name, position, positions, skill) VALUES (?, ?, ?, ?)");
   const insertStats  = db.prepare(`
     INSERT INTO player_stats (player_id, season_id, pts, gp, wins, draws, losses)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -142,7 +171,8 @@ if (!seasonExists) {
 
   const insertAll = db.transaction(() => {
     for (const [name, pos, pts, gp, wins, draws] of PLAYERS) {
-      const p = insertPlayer.run(name, pos);
+      const skill = Math.max(1, Math.min(10, Math.round(pts / 3) || 5));
+      const p = insertPlayer.run(name, pos, pos, skill);
       insertStats.run(p.lastInsertRowid, seasonId, pts, gp, wins, draws, gp - wins - draws);
     }
   });

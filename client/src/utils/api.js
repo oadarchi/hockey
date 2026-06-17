@@ -23,17 +23,20 @@ export const auth = {
 
 // Seasons
 export const seasons = {
-  list:       ()                    => req("GET",  "/seasons"),
-  create:     (body)                => req("POST", "/seasons", body),
-  standings:  (id)                  => req("GET",  `/seasons/${id}/standings`),
+  list:       ()                    => req("GET",    "/seasons"),
+  create:     (body)                => req("POST",   "/seasons", body),
+  standings:  (id)                  => req("GET",    `/seasons/${id}/standings`),
+  remove:     (id)                  => req("DELETE", `/seasons/${id}`),
 };
 
 // Players
 export const players = {
-  list:    (season_id) => req("GET",  `/players${season_id ? `?season_id=${season_id}` : ""}`),
-  add:     (body)      => req("POST", "/players", body),
-  update:  (id, body)  => req("PATCH", `/players/${id}`, body),
-  history: (id)        => req("GET",  `/players/${id}/history`),
+  list:    (season_id) => req("GET",    `/players${season_id ? `?season_id=${season_id}` : ""}`),
+  add:     (body)      => req("POST",   "/players", body),
+  addGuest:(body)      => req("POST",   "/players/guest", body),
+  update:  (id, body)  => req("PATCH",  `/players/${id}`, body),
+  remove:  (id)        => req("DELETE", `/players/${id}`),
+  history: (id)        => req("GET",    `/players/${id}/history`),
 };
 
 // Games

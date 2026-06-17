@@ -1,17 +1,48 @@
 // client/src/utils/helpers.js
 
+export const SKILL_DEFAULT = 5;
+
+export function skillOf(p) {
+  const n = Number(p?.skill);
+  return Number.isFinite(n) ? n : SKILL_DEFAULT;
+}
+
+// Positions can arrive as "F,D" string (DB) or an array (form state)
+export function posList(p) {
+  const raw = p?.positions;
+  if (Array.isArray(raw)) return raw.length ? raw : ["F"];
+  if (typeof raw === "string" && raw.trim()) return raw.split(",").map(s => s.trim()).filter(Boolean);
+  return [p?.position || "F"];
+}
+
+export function primaryPos(p) {
+  return p?.position || posList(p)[0] || "F";
+}
+
+export function isGoalie(p) {
+  return primaryPos(p) === "G";
+}
+
+// Balance two teams by skill rating (goalies split evenly first, then a
+// greedy skill-sum fill that also keeps team sizes within one of each other)
 export function autoSplit(playerList) {
-  const byPos = { G: [], D: [], F: [] };
-  for (const p of playerList) {
-    (byPos[p.position] || byPos.F).push(p);
-  }
-  for (const arr of Object.values(byPos)) {
-    arr.sort((a, b) => b.pts - a.pts);
-  }
+  const goalies = playerList.filter(isGoalie);
+  const skaters = playerList.filter(p => !isGoalie(p));
   const w = [], b = [];
-  byPos.G.forEach((g, i) => (i % 2 === 0 ? w : b).push(g));
-  let flip = w.length <= b.length;
-  [...byPos.D, ...byPos.F].forEach(p => { (flip ? w : b).push(p); flip = !flip; });
+  let ws = 0, bs = 0;
+
+  goalies.sort((a, c) => skillOf(c) - skillOf(a));
+  goalies.forEach((g, i) => (i % 2 === 0 ? (w.push(g), ws += skillOf(g)) : (b.push(g), bs += skillOf(g))));
+
+  skaters.sort((a, c) => skillOf(c) - skillOf(a));
+  for (const p of skaters) {
+    const s = skillOf(p);
+    let toWhite;
+    if (w.length - b.length >= 2) toWhite = false;       // keep sizes balanced
+    else if (b.length - w.length >= 2) toWhite = true;
+    else toWhite = ws < bs || (ws === bs && w.length <= b.length);
+    if (toWhite) { w.push(p); ws += s; } else { b.push(p); bs += s; }
+  }
   return { white: w, black: b };
 }
 

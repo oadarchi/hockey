@@ -91,10 +91,13 @@ dike-app/
 ```env
 PORT=3001
 ADMIN_PASSWORD=volvo2026
+SUPERADMIN_PASSWORD=developer2026
 SESSION_SECRET=mains-slepens-teksts-2026
 DB_PATH=./data/dike.db
 NODE_ENV=production
 ```
+
+**Lomas:** parastais admins (`ADMIN_PASSWORD`) kārto spēļu dienas, rezultātus un sezonas. Superadmins (`SUPERADMIN_PASSWORD`) papildus rediģē spēlētāju **skill** reitingus un drīkst **dzēst** spēlētājus/sezonas.
 
 Izveido `.env` failu projekta saknē un Node.js to nolasīs.
 
@@ -127,7 +130,8 @@ Railway pats palaiž: `npm install` → `npm run build` (uzbūvē klientu) → `
 | Mainīgais | Vērtība |
 |-----------|---------|
 | `DB_PATH` | `/data/dike.db` ← norāda DB uz volume |
-| `ADMIN_PASSWORD` | tava jaunā parole |
+| `ADMIN_PASSWORD` | parastā admina parole |
+| `SUPERADMIN_PASSWORD` | superadmina parole (skill + dzēšana) |
 | `SESSION_SECRET` | garš nejaušs teksts |
 | `NODE_ENV` | `production` |
 

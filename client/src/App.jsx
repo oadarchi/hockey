@@ -1,7 +1,7 @@
 // client/src/App.jsx
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { auth, players as playersApi, games as gamesApi, seasons as seasonsApi } from "./utils/api.js";
-import { autoSplit, fmt, POS_META } from "./utils/helpers.js";
+import { autoSplit, fmt, POS_META, posList, skillOf, SKILL_DEFAULT } from "./utils/helpers.js";
 
 // ── Logo (base64 embedded so no external file needed) ────────────────────────
 // Replace LOGO_PLACEHOLDER with your base64 PNG:
@@ -100,17 +100,44 @@ function Bdg({ pos }) {
   return <span className="badge" style={{ background: s.bg, color: s.c }}>{pos}</span>;
 }
 
+// One or more position badges for a player (handles multi-position F/D)
+function PosBadges({ p }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 3 }}>
+      {posList(p).map(pos => <Bdg key={pos} pos={pos} />)}
+    </span>
+  );
+}
+
+// Small skill chip (1..10)
+function SkillChip({ value }) {
+  return (
+    <span className="oswald" title="Skill (komandu balansēšanai)"
+      style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 700,
+        color: "var(--gold)", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 4, padding: "1px 6px" }}>
+      ⚡{value ?? SKILL_DEFAULT}
+    </span>
+  );
+}
+
 function Spinner() {
   return <div style={{ display: "flex", justifyContent: "center", padding: 48 }}><div className="spinner" /></div>;
 }
 
-function PosBtns({ value, onChange }) {
+// Multi-select position picker (at least one stays selected)
+function PosPicker({ value, onChange }) {
+  const sel = Array.isArray(value) ? value : [value || "F"];
+  const toggle = v => {
+    const has = sel.includes(v);
+    const next = has ? sel.filter(x => x !== v) : [...sel, v];
+    onChange(next.length ? next : [v]); // never empty
+  };
   return (
     <div style={{ display: "flex", gap: 4 }}>
       {["F", "D", "G"].map(v => {
-        const s = POS_META[v], on = value === v;
+        const s = POS_META[v], on = sel.includes(v);
         return (
-          <button key={v} title={s.full} onClick={() => onChange(v)}
+          <button key={v} type="button" title={s.full} onClick={() => toggle(v)}
             style={{ fontFamily: "Oswald,sans-serif", fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 5, border: on ? "none" : "1px solid var(--bdr)", cursor: "pointer", letterSpacing: 1, background: on ? s.bg : "#fff", color: on ? s.c : "var(--muted)", boxShadow: on ? "0 1px 4px rgba(0,0,0,.18)" : "none" }}>
             {v}
           </button>
@@ -179,7 +206,7 @@ function Standings({ seasonId, allGames }) {
                       {p.name}
                       {i === 0 && <span style={{ marginLeft: 8, fontSize: 10, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>★ LĪDERIS</span>}
                     </td>
-                    <td><Bdg pos={p.position} /></td>
+                    <td><PosBadges p={p} /></td>
                     <td className="r"><span className="pts-big">{p.pts}</span></td>
                     <td className="r mob-hide" style={{ color: "var(--muted)" }}>{p.gp}</td>
                     <td className="r mob-hide" style={{ color: "var(--grn)", fontWeight: 600 }}>{p.wins}</td>
@@ -206,6 +233,7 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
   const [loading, setLoading] = useState(false);
   const [ph, setPh] = useState("ci");
   const [cids, setCids] = useState([]);
+  const [guests, setGuests] = useState([]); // "+1 / svešais" ad-hoc players for this game
   const [teams, setTeams] = useState(null);
   const [ws, setWs] = useState(""), [bs, setBs] = useState("");
   const [saving, setSaving] = useState(false);
@@ -214,6 +242,7 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
 
   const game = allGames.find(g => g.id === gid);
   const active = allPlayers.filter(p => p.active);
+  const roster = [...active, ...guests]; // registered players + this game's guests
 
   // Load game detail when gid changes
   useEffect(() => {
@@ -222,18 +251,31 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
     gamesApi.get(gid).then(d => {
       setDetail(d);
       if (d.white_team?.length || d.black_team?.length) {
-        setCids([...d.white_team.map(p => p.id), ...d.black_team.map(p => p.id)]);
+        const all = [...d.white_team, ...d.black_team];
+        setGuests(all.filter(p => p.guest));
+        setCids(all.map(p => p.id));
         setTeams({ white: d.white_team, black: d.black_team });
         if (d.white_score !== null) { setWs(String(d.white_score)); setBs(String(d.black_score)); setPh("rs"); }
         else setPh("tm");
-      } else { setCids([]); setTeams(null); setPh("ci"); }
+      } else { setCids([]); setGuests([]); setTeams(null); setPh("ci"); }
     }).finally(() => setLoading(false));
   }, [gid]);
 
   const toggle = id => { if (isAdmin) setCids(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); };
 
+  const addGuest = async () => {
+    const g = await playersApi.addGuest({ name: `Svešais ${guests.length + 1}`, positions: ["F"], skill: SKILL_DEFAULT });
+    setGuests(prev => [...prev, g]);
+    setCids(prev => [...prev, g.id]);
+  };
+
+  const removeGuest = id => {
+    setGuests(prev => prev.filter(p => p.id !== id));
+    setCids(prev => prev.filter(x => x !== id));
+  };
+
   const doSplit = async () => {
-    const ps = active.filter(p => cids.includes(p.id));
+    const ps = roster.filter(p => cids.includes(p.id));
     const res = autoSplit(ps);
     setTeams({ white: res.white, black: res.black });
     await gamesApi.saveTeams(gid, { white_ids: res.white.map(p => p.id), black_ids: res.black.map(p => p.id) });
@@ -274,11 +316,12 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
 
   const doImport = () => {
     const lines = impTxt.split("\n").map(s => s.trim().toLowerCase()).filter(Boolean);
-    setCids(active.filter(p => lines.some(l => p.name.toLowerCase().includes(l))).map(p => p.id));
+    setCids(roster.filter(p => lines.some(l => p.name.toLowerCase().includes(l))).map(p => p.id));
     setImp(false); setImpTxt("");
   };
 
-  const tPts = side => (teams?.[side] || []).reduce((s, p) => s + p.pts, 0);
+  const tPts   = side => (teams?.[side] || []).reduce((s, p) => s + (p.pts || 0), 0);
+  const tSkill = side => (teams?.[side] || []).reduce((s, p) => s + skillOf(p), 0);
 
   if (!game) return <div style={{ padding: 48, textAlign: "center", color: "var(--muted)" }}>Nav pieejamu spēļu</div>;
 
@@ -331,10 +374,11 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
           {ph === "ci" && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <div className="slbl" style={{ marginBottom: 0 }}>{cids.length} pieteikušies · {active.length} kopā</div>
+                <div className="slbl" style={{ marginBottom: 0 }}>{cids.length} pieteikušies · {active.length} kopā{guests.length ? ` · +${guests.length} svešie` : ""}</div>
                 {isAdmin && (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <button className="btn btn-sm btn-o" onClick={() => setImp(v => !v)}>📋 Importēt</button>
+                    <button className="btn btn-sm btn-o" onClick={addGuest}>➕ Svešais (+1)</button>
                     <button className="btn btn-sm btn-o" onClick={() => setCids(active.map(p => p.id))}>Atzīmēt visus</button>
                     <button className="btn btn-sm btn-o" onClick={() => setCids([])}>Notīrīt</button>
                     <button className="btn btn-b btn-sm" onClick={doSplit} disabled={cids.length < 2}>Sadalīt komandās →</button>
@@ -352,16 +396,23 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
                 </div>
               )}
               <div className="ci-grid">
-                {active.map(p => {
+                {roster.map(p => {
                   const on = cids.includes(p.id);
                   return (
-                    <div key={p.id} className={`pc ${on ? "on" : ""} ${isAdmin ? "clickable" : ""}`} onClick={() => toggle(p.id)}>
+                    <div key={p.id} className={`pc ${on ? "on" : ""} ${isAdmin ? "clickable" : ""}`} onClick={() => toggle(p.id)}
+                      style={p.guest ? { borderStyle: "dashed", borderColor: on ? "var(--blue)" : "#c9b896", background: on ? "#eff5ff" : "#fffdf5" } : undefined}>
                       <div className="chk" style={{ borderColor: on ? "var(--blue)" : "var(--bdr)", background: on ? "var(--blue)" : "transparent", color: "#fff" }}>{on && "✓"}</div>
-                      <Bdg pos={p.position} />
+                      <PosBadges p={p} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.pts} pts</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {p.guest && <span title="Svešais / +1" style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.guest ? "svešais" : `${p.pts} pts`} · ⚡{skillOf(p)}</div>
                       </div>
+                      {isAdmin && p.guest && (
+                        <button title="Noņemt svešo" onClick={e => { e.stopPropagation(); removeGuest(p.id); }}
+                          style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 2 }}>×</button>
+                      )}
                     </div>
                   );
                 })}
@@ -381,8 +432,10 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
                     <div className="slbl" style={{ marginBottom: 0 }}>
-                      ⬜ {teams.white.length} sp. ({tPts("white")}p) · ⬛ {teams.black.length} sp. ({tPts("black")}p)
-                      {Math.abs(tPts("white") - tPts("black")) <= 5 && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>}
+                      ⬜ {teams.white.length} sp. (⚡{tSkill("white")}) · ⬛ {teams.black.length} sp. (⚡{tSkill("black")})
+                      {Math.abs(tSkill("white") - tSkill("black")) <= 2
+                        ? <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>
+                        : <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>Δ {Math.abs(tSkill("white") - tSkill("black"))} skill</span>}
                     </div>
                     {isAdmin && (
                       <div style={{ display: "flex", gap: 8 }}>
@@ -399,15 +452,17 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
                           {(teams[side] || []).map(p => (
                             <div key={p.id} className={`t-row t-row-${side === "white" ? "w" : "b"}`}>
                               {isAdmin && side === "black" && <button className="btn btn-sm btn-o" style={{ padding: "3px 8px" }} onClick={() => swap(p.id, "black")}>←</button>}
-                              <Bdg pos={p.position} />
-                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.name}</span>
-                              <span className="oswald" style={{ fontSize: 13, color: "var(--ice)", marginRight: isAdmin && side === "white" ? 4 : 0 }}>{p.pts}</span>
+                              <PosBadges p={p} />
+                              <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
+                                {p.guest && <span style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
+                              </span>
+                              <span style={{ marginRight: isAdmin && side === "white" ? 4 : 0 }}><SkillChip value={skillOf(p)} /></span>
                               {isAdmin && side === "white" && <button className="btn btn-sm btn-o" style={{ padding: "3px 8px" }} onClick={() => swap(p.id, "white")}>→</button>}
                             </div>
                           ))}
                           <div style={{ margin: "8px 14px 4px", paddingTop: 8, borderTop: "1px solid var(--bdr)", fontSize: 12, color: "var(--muted)", display: "flex", justifyContent: "space-between" }}>
-                            <span>Kopā:</span>
-                            <span className="oswald" style={{ color: "var(--ice)" }}>{tPts(side)} pts</span>
+                            <span>Σ skill:</span>
+                            <span className="oswald" style={{ color: "var(--gold)" }}>⚡{tSkill(side)}</span>
                           </div>
                         </div>
                       </div>
@@ -628,7 +683,7 @@ function Archive({ seasonId }) {
                   <tr key={p.id}>
                     <td className="oswald" style={{ fontWeight: 600, color: "var(--muted)" }}>{i + 1}</td>
                     <td style={{ fontWeight: 500 }}>{p.name}{i === 0 && <span style={{ marginLeft: 8, fontSize: 10, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>★ LĪDERIS</span>}</td>
-                    <td><Bdg pos={p.position} /></td>
+                    <td><PosBadges p={p} /></td>
                     <td className="r"><span className="pts-big">{p.pts}</span></td>
                     <td className="r" style={{ color: "var(--muted)" }}>{p.gp}</td>
                     <td className="r" style={{ color: "var(--grn)", fontWeight: 600 }}>{p.wins}</td>
@@ -647,10 +702,10 @@ function Archive({ seasonId }) {
 
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
 
-function Admin({ seasonId, allPlayers, onPlayersChange, allGames, onGamesChange }) {
+function Admin({ seasonId, isSuper, allPlayers, onPlayersChange, allGames, onGamesChange, seasonsList, onSeasonsChange }) {
   const [tab, setTab] = useState("pl");
   const [eid, setEid] = useState(null), [ed, setEd] = useState({});
-  const [np, setNp] = useState({ name: "", position: "F" });
+  const [np, setNp] = useState({ name: "", positions: ["F"], skill: SKILL_DEFAULT });
   const [q, setQ] = useState("");
   const [gmEdit, setGmEdit] = useState(null), [gwv, setGwv] = useState(""), [gbv, setGbv] = useState("");
   const [newSeason, setNewSeason] = useState({ name: "", start_date: "", end_date: "" });
@@ -660,13 +715,27 @@ function Admin({ seasonId, allPlayers, onPlayersChange, allGames, onGamesChange 
   const flash = m => { setMsg(m); setTimeout(() => setMsg(""), 3000); };
 
   const savePlayer = async () => {
-    await playersApi.update(eid, { ...ed, season_id: seasonId });
+    const body = { name: ed.name, positions: ed.positions, pts: ed.pts, season_id: seasonId };
+    if (isSuper) body.skill = ed.skill;
+    await playersApi.update(eid, body);
     onPlayersChange(); setEid(null); flash("✓ Saglabāts");
   };
   const addPlayer = async () => {
     if (!np.name.trim()) return;
-    await playersApi.add(np);
-    onPlayersChange(); setNp({ name: "", position: "F" }); flash("✓ Pievienots");
+    const body = { name: np.name.trim(), positions: np.positions };
+    if (isSuper) body.skill = np.skill;
+    await playersApi.add(body);
+    onPlayersChange(); setNp({ name: "", positions: ["F"], skill: SKILL_DEFAULT }); flash("✓ Pievienots");
+  };
+  const deletePlayer = async (p) => {
+    if (!window.confirm(`Dzēst spēlētāju "${p.name}"? Tiks dzēsta visa viņa statistika.`)) return;
+    await playersApi.remove(p.id);
+    onPlayersChange(); flash("✓ Spēlētājs dzēsts");
+  };
+  const deleteSeason = async (s) => {
+    if (!window.confirm(`Dzēst sezonu "${s.name}" ar visām spēlēm un statistiku? Šo nevar atsaukt.`)) return;
+    await seasonsApi.remove(s.id);
+    onSeasonsChange?.(); onGamesChange(); flash("✓ Sezona dzēsta");
   };
   const saveResult = async (g) => {
     const wv = parseInt(gwv), bv = parseInt(gbv);
@@ -699,20 +768,26 @@ function Admin({ seasonId, allPlayers, onPlayersChange, allGames, onGamesChange 
           <div className="card">
             <div style={{ overflowX: "auto" }}>
               <table className="tbl">
-                <thead><tr><th>Spēlētājs</th><th>Pozīcija</th><th className="r">Punkti</th><th>Statuss</th><th>Darbības</th></tr></thead>
+                <thead><tr><th>Spēlētājs</th><th>Pozīcija</th><th>Skill</th><th className="r">Punkti</th><th>Statuss</th><th>Darbības</th></tr></thead>
                 <tbody>
                   {fp.map(p => (
                     <tr key={p.id}>
                       <td style={{ minWidth: 160 }}>{eid === p.id ? <input className="inp w100" value={ed.name} onChange={e => setEd(d => ({ ...d, name: e.target.value }))} /> : <span style={{ fontWeight: 500 }}>{p.name}</span>}</td>
-                      <td style={{ minWidth: 120 }}>{eid === p.id ? <PosBtns value={ed.position} onChange={v => setEd(d => ({ ...d, position: v }))} /> : <Bdg pos={p.position} />}</td>
+                      <td style={{ minWidth: 130 }}>{eid === p.id ? <PosPicker value={ed.positions} onChange={v => setEd(d => ({ ...d, positions: v }))} /> : <PosBadges p={p} />}</td>
+                      <td style={{ minWidth: 90 }}>
+                        {eid === p.id && isSuper
+                          ? <input className="inp" type="number" min="1" max="10" value={ed.skill} onChange={e => setEd(d => ({ ...d, skill: Math.max(1, Math.min(10, +e.target.value || 1)) }))} style={{ width: 60, textAlign: "center" }} />
+                          : <SkillChip value={skillOf(p)} />}
+                      </td>
                       <td className="r" style={{ minWidth: 80 }}>{eid === p.id ? <input className="inp" type="number" value={ed.pts} onChange={e => setEd(d => ({ ...d, pts: +e.target.value || 0 }))} style={{ width: 72, textAlign: "right" }} /> : <span className="pts-big">{p.pts}</span>}</td>
                       <td><span className="oswald" style={{ fontSize: 11, letterSpacing: 1, color: p.active ? "var(--grn)" : "var(--muted)" }}>{p.active ? "● AKTĪVS" : "○ NEAKTĪVS"}</span></td>
                       <td>
                         <div style={{ display: "flex", gap: 5 }}>
                           {eid === p.id
                             ? <><button className="btn btn-b btn-sm" onClick={savePlayer}>Sagl.</button><button className="btn btn-o btn-sm" onClick={() => setEid(null)}>Atcelt</button></>
-                            : <><button className="btn btn-o btn-sm" onClick={() => { setEid(p.id); setEd({ name: p.name, position: p.position, pts: p.pts }); }}>✎</button>
-                                <button className="btn btn-o btn-sm" onClick={async () => { await playersApi.update(p.id, { active: p.active ? 0 : 1 }); onPlayersChange(); }}>{p.active ? "Deakt." : "Akt."}</button></>}
+                            : <><button className="btn btn-o btn-sm" onClick={() => { setEid(p.id); setEd({ name: p.name, positions: posList(p), pts: p.pts, skill: skillOf(p) }); }}>✎</button>
+                                <button className="btn btn-o btn-sm" onClick={async () => { await playersApi.update(p.id, { active: p.active ? 0 : 1 }); onPlayersChange(); }}>{p.active ? "Deakt." : "Akt."}</button>
+                                {isSuper && <button className="btn btn-r btn-sm" onClick={() => deletePlayer(p)}>🗑</button>}</>}
                         </div>
                       </td>
                     </tr>
@@ -780,9 +855,15 @@ function Admin({ seasonId, allPlayers, onPlayersChange, allGames, onGamesChange 
                 <input className="inp w100" value={np.name} onChange={e => setNp(p => ({ ...p, name: e.target.value }))} placeholder="Jānis Bērziņš" onKeyDown={e => e.key === "Enter" && addPlayer()} />
               </div>
               <div>
-                <div className="oswald" style={{ fontSize: 10, color: "var(--muted)", letterSpacing: 1, marginBottom: 6 }}>POZĪCIJA</div>
-                <PosBtns value={np.position} onChange={v => setNp(p => ({ ...p, position: v }))} />
+                <div className="oswald" style={{ fontSize: 10, color: "var(--muted)", letterSpacing: 1, marginBottom: 6 }}>POZĪCIJA(-S) — var vairākas</div>
+                <PosPicker value={np.positions} onChange={v => setNp(p => ({ ...p, positions: v }))} />
               </div>
+              {isSuper && (
+                <div>
+                  <div className="oswald" style={{ fontSize: 10, color: "var(--muted)", letterSpacing: 1, marginBottom: 6 }}>SKILL (1–10)</div>
+                  <input className="inp" type="number" min="1" max="10" value={np.skill} onChange={e => setNp(p => ({ ...p, skill: Math.max(1, Math.min(10, +e.target.value || 1)) }))} style={{ width: 80, textAlign: "center" }} />
+                </div>
+              )}
               <button className="btn btn-b w100" style={{ justifyContent: "center" }} onClick={addPlayer}>+ Pievienot</button>
             </div>
           </div>
@@ -813,6 +894,23 @@ function Admin({ seasonId, allPlayers, onPlayersChange, allGames, onGamesChange 
               <button className="btn btn-b w100" style={{ justifyContent: "center" }} onClick={createSeason} disabled={!newSeason.name || !newSeason.start_date || !newSeason.end_date}>Izveidot sezonu</button>
             </div>
           </div>
+
+          {(seasonsList?.length > 0) && (
+            <div className="card card-pad" style={{ marginTop: 16 }}>
+              <h3 className="oswald" style={{ fontSize: 15, marginBottom: 12, color: "var(--txt)" }}>Esošās sezonas</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {seasonsList.map(s => (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 8, borderBottom: "1px solid #eef1f6" }}>
+                    <span className="oswald" style={{ fontWeight: 600, fontSize: 15 }}>{s.name}</span>
+                    {s.active === 1 && <span className="oswald" style={{ fontSize: 10, color: "var(--grn)", letterSpacing: 1 }}>● AKTĪVA</span>}
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{s.start_date} → {s.end_date}</span>
+                    {isSuper && <button className="btn btn-r btn-sm" style={{ marginLeft: "auto" }} onClick={() => deleteSeason(s)}>🗑 Dzēst</button>}
+                  </div>
+                ))}
+              </div>
+              {!isSuper && <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>Sezonu dzēšana pieejama tikai superadmin.</p>}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -824,21 +922,26 @@ function Admin({ seasonId, allPlayers, onPlayersChange, allGames, onGamesChange 
 export default function App() {
   const [view, setView] = useState("st");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuper, setIsSuper] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [pw, setPw] = useState(""), [pwErr, setPwErr] = useState(false);
   const [seasonId, setSeasonId] = useState(null);
+  const [seasonsList, setSeasonsList] = useState([]);
   const [allGames, setAllGames] = useState([]);
   const [allPlayers, setAllPlayers] = useState([]);
   const [booting, setBooting] = useState(true);
 
   // Check auth on load
   useEffect(() => {
-    auth.status().then(d => setIsAdmin(d.isAdmin));
+    auth.status().then(d => { setIsAdmin(d.isAdmin); setIsSuper(d.isSuper); });
   }, []);
+
+  const loadSeasons = useCallback(() => seasonsApi.list().then(setSeasonsList), []);
 
   // Load active season
   useEffect(() => {
     seasonsApi.list().then(s => {
+      setSeasonsList(s);
       const active = s.find(x => x.active) || s[0];
       if (active) setSeasonId(active.id);
     }).finally(() => setBooting(false));
@@ -850,10 +953,14 @@ export default function App() {
   useEffect(() => { loadGames(); loadPlayers(); }, [seasonId]);
 
   const tryLogin = async () => {
-    try { await auth.login(pw); setIsAdmin(true); setLoginOpen(false); setPw(""); setPwErr(false); }
+    try {
+      const r = await auth.login(pw);
+      setIsAdmin(true); setIsSuper(r.role === "super");
+      setLoginOpen(false); setPw(""); setPwErr(false);
+    }
     catch { setPwErr(true); setPw(""); }
   };
-  const logout = async () => { await auth.logout(); setIsAdmin(false); };
+  const logout = async () => { await auth.logout(); setIsAdmin(false); setIsSuper(false); };
 
   const nextGame = allGames.find(g => !g.cancelled && g.status === "upcoming");
 
@@ -884,7 +991,11 @@ export default function App() {
             )}
             <div style={{ position: "relative" }}>
               {isAdmin
-                ? <button onClick={logout} style={{ fontFamily: "Oswald,sans-serif", fontSize: 12, letterSpacing: 1, background: "rgba(22,163,74,.2)", color: "#22c55e", border: "1px solid rgba(22,163,74,.35)", padding: "6px 14px", borderRadius: 5, cursor: "pointer" }}>● ADMIN</button>
+                ? <button onClick={logout} title="Iziet" style={{ fontFamily: "Oswald,sans-serif", fontSize: 12, letterSpacing: 1,
+                    background: isSuper ? "rgba(217,119,6,.2)" : "rgba(22,163,74,.2)",
+                    color: isSuper ? "#fbbf24" : "#22c55e",
+                    border: `1px solid ${isSuper ? "rgba(217,119,6,.4)" : "rgba(22,163,74,.35)"}`,
+                    padding: "6px 14px", borderRadius: 5, cursor: "pointer" }}>● {isSuper ? "SUPER" : "ADMIN"}</button>
                 : <button onClick={() => setLoginOpen(v => !v)} style={{ fontFamily: "Oswald,sans-serif", fontSize: 16, background: "transparent", color: "#4a6a8a", border: "1px solid #1a3050", padding: "4px 10px", borderRadius: 5, cursor: "pointer" }}>🔒</button>}
               {loginOpen && !isAdmin && (
                 <div className="pw-box">
@@ -917,7 +1028,7 @@ export default function App() {
         {view === "cal" && <Calendar allGames={allGames} isAdmin={isAdmin} onGamesChange={loadGames} />}
         {view === "arc" && <Archive seasonId={seasonId} />}
         {view === "adm" && (isAdmin
-          ? <Admin seasonId={seasonId} allPlayers={allPlayers} onPlayersChange={loadPlayers} allGames={allGames} onGamesChange={loadGames} />
+          ? <Admin seasonId={seasonId} isSuper={isSuper} allPlayers={allPlayers} onPlayersChange={loadPlayers} allGames={allGames} onGamesChange={loadGames} seasonsList={seasonsList} onSeasonsChange={loadSeasons} />
           : <div style={{ textAlign: "center", padding: "80px 20px" }}>
               <div style={{ fontSize: 56, marginBottom: 20 }}>🔒</div>
               <h2 className="oswald" style={{ fontSize: 22, letterSpacing: 2, color: "var(--txt)", marginBottom: 8 }}>NEPIECIEŠAMA ADMIN PIEKĻUVE</h2>
