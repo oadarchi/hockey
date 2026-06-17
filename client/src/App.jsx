@@ -225,7 +225,7 @@ function Standings({ seasonId, allGames }) {
 
 // ── GAME DAY ──────────────────────────────────────────────────────────────────
 
-function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
+function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChange }) {
   const upcoming = allGames.filter(g => !g.cancelled);
   const nextGame = allGames.find(g => !g.cancelled && g.status === "upcoming");
   const [gid, setGid] = useState(nextGame?.id || upcoming[0]?.id || null);
@@ -407,7 +407,7 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
                         <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {p.guest && <span title="Svešais / +1" style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.guest ? "svešais" : `${p.pts} pts`} · ⚡{skillOf(p)}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.guest ? "svešais" : `${p.pts} pts`}{isSuper ? ` · ⚡${skillOf(p)}` : ""}</div>
                       </div>
                       {isAdmin && p.guest && (
                         <button title="Noņemt svešo" onClick={e => { e.stopPropagation(); removeGuest(p.id); }}
@@ -432,10 +432,14 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
                     <div className="slbl" style={{ marginBottom: 0 }}>
-                      ⬜ {teams.white.length} sp. (⚡{tSkill("white")}) · ⬛ {teams.black.length} sp. (⚡{tSkill("black")})
-                      {Math.abs(tSkill("white") - tSkill("black")) <= 2
-                        ? <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>
-                        : <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>Δ {Math.abs(tSkill("white") - tSkill("black"))} skill</span>}
+                      {isSuper
+                        ? <>⬜ {teams.white.length} sp. (⚡{tSkill("white")}) · ⬛ {teams.black.length} sp. (⚡{tSkill("black")})
+                            {Math.abs(tSkill("white") - tSkill("black")) <= 2
+                              ? <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>
+                              : <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>Δ {Math.abs(tSkill("white") - tSkill("black"))} skill</span>}</>
+                        : <>⬜ {teams.white.length} sp. · ⬛ {teams.black.length} sp.
+                            {Math.abs(teams.white.length - teams.black.length) <= 1
+                              && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>}</>}
                     </div>
                     {isAdmin && (
                       <div style={{ display: "flex", gap: 8 }}>
@@ -456,13 +460,15 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, onGamesChange }) {
                               <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
                                 {p.guest && <span style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
                               </span>
-                              <span style={{ marginRight: isAdmin && side === "white" ? 4 : 0 }}><SkillChip value={skillOf(p)} /></span>
+                              <span style={{ marginRight: isAdmin && side === "white" ? 4 : 0 }}>
+                                {isSuper ? <SkillChip value={skillOf(p)} /> : <span className="oswald" style={{ fontSize: 13, color: "var(--ice)" }}>{p.pts}</span>}
+                              </span>
                               {isAdmin && side === "white" && <button className="btn btn-sm btn-o" style={{ padding: "3px 8px" }} onClick={() => swap(p.id, "white")}>→</button>}
                             </div>
                           ))}
                           <div style={{ margin: "8px 14px 4px", paddingTop: 8, borderTop: "1px solid var(--bdr)", fontSize: 12, color: "var(--muted)", display: "flex", justifyContent: "space-between" }}>
-                            <span>Σ skill:</span>
-                            <span className="oswald" style={{ color: "var(--gold)" }}>⚡{tSkill(side)}</span>
+                            <span>{isSuper ? "Σ skill:" : "Kopā:"}</span>
+                            <span className="oswald" style={{ color: isSuper ? "var(--gold)" : "var(--ice)" }}>{isSuper ? `⚡${tSkill(side)}` : `${tPts(side)} pts`}</span>
                           </div>
                         </div>
                       </div>
@@ -782,17 +788,19 @@ function Admin({ seasonId, isSuper, allPlayers, onPlayersChange, allGames, onGam
           <div className="card">
             <div style={{ overflowX: "auto" }}>
               <table className="tbl">
-                <thead><tr><SortTh k="name" label="Spēlētājs" /><th>Pozīcija</th><SortTh k="skill" label="Skill" /><SortTh k="pts" label="Punkti" cls="r" /><th>Statuss</th><th>Darbības</th></tr></thead>
+                <thead><tr><SortTh k="name" label="Spēlētājs" /><th>Pozīcija</th>{isSuper && <SortTh k="skill" label="Skill" />}<SortTh k="pts" label="Punkti" cls="r" /><th>Statuss</th><th>Darbības</th></tr></thead>
                 <tbody>
                   {fp.map(p => (
                     <tr key={p.id}>
                       <td style={{ minWidth: 160 }}>{eid === p.id ? <input className="inp w100" value={ed.name} onChange={e => setEd(d => ({ ...d, name: e.target.value }))} /> : <span style={{ fontWeight: 500 }}>{p.name}</span>}</td>
                       <td style={{ minWidth: 130 }}>{eid === p.id ? <PosPicker value={ed.positions} onChange={v => setEd(d => ({ ...d, positions: v }))} /> : <PosBadges p={p} />}</td>
-                      <td style={{ minWidth: 90 }}>
-                        {eid === p.id && isSuper
-                          ? <input className="inp" type="number" min="1" max="10" value={ed.skill} onChange={e => setEd(d => ({ ...d, skill: Math.max(1, Math.min(10, +e.target.value || 1)) }))} style={{ width: 60, textAlign: "center" }} />
-                          : <SkillChip value={skillOf(p)} />}
-                      </td>
+                      {isSuper && (
+                        <td style={{ minWidth: 90 }}>
+                          {eid === p.id
+                            ? <input className="inp" type="number" min="1" max="10" value={ed.skill} onChange={e => setEd(d => ({ ...d, skill: Math.max(1, Math.min(10, +e.target.value || 1)) }))} style={{ width: 60, textAlign: "center" }} />
+                            : <SkillChip value={skillOf(p)} />}
+                        </td>
+                      )}
                       <td className="r" style={{ minWidth: 80 }}>{eid === p.id ? <input className="inp" type="number" value={ed.pts} onChange={e => setEd(d => ({ ...d, pts: +e.target.value || 0 }))} style={{ width: 72, textAlign: "right" }} /> : <span className="pts-big">{p.pts}</span>}</td>
                       <td><span className="oswald" style={{ fontSize: 11, letterSpacing: 1, color: p.active ? "var(--grn)" : "var(--muted)" }}>{p.active ? "● AKTĪVS" : "○ NEAKTĪVS"}</span></td>
                       <td>
@@ -1038,7 +1046,7 @@ export default function App() {
       {/* CONTENT */}
       <div className="pg">
         {view === "st"  && <Standings seasonId={seasonId} allGames={allGames} />}
-        {view === "gd"  && <GameDay seasonId={seasonId} allGames={allGames} allPlayers={allPlayers} isAdmin={isAdmin} onGamesChange={loadGames} />}
+        {view === "gd"  && <GameDay seasonId={seasonId} allGames={allGames} allPlayers={allPlayers} isAdmin={isAdmin} isSuper={isSuper} onGamesChange={loadGames} />}
         {view === "cal" && <Calendar allGames={allGames} isAdmin={isAdmin} onGamesChange={loadGames} />}
         {view === "arc" && <Archive seasonId={seasonId} />}
         {view === "adm" && (isAdmin
