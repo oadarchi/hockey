@@ -344,7 +344,7 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
         {isAdmin && !game.cancelled && game.status === "upcoming" && (
           <button className="btn btn-r btn-sm" onClick={() => setCancelOpen(v => !v)}>Atcelt spēli</button>
         )}
-        {game.cancelled && (
+        {!!game.cancelled && (
           <div style={{ padding: "6px 14px", background: "#fff0f2", border: "1px solid #fbc8cf", borderRadius: 5 }}>
             <span className="oswald" style={{ fontSize: 12, color: "var(--red)", letterSpacing: 1 }}>❌ ATCELTS{game.cancel_note ? ` · ${game.cancel_note}` : ""}</span>
           </div>
@@ -433,7 +433,7 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
                     <div className="slbl" style={{ marginBottom: 0 }}>
                       ⬜ {teams.white.length} sp. · ⬛ {teams.black.length} sp.
-                      {Math.abs(teams.white.length - teams.black.length) <= 1
+                      {Math.abs(tSkill("white") - tSkill("black")) <= 2
                         && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--grn)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>✓ LĪDZSVAROTS</span>}
                     </div>
                     {isAdmin && (
@@ -460,8 +460,8 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
                             </div>
                           ))}
                           <div style={{ margin: "8px 14px 4px", paddingTop: 8, borderTop: "1px solid var(--bdr)", fontSize: 12, color: "var(--muted)", display: "flex", justifyContent: "space-between" }}>
-                            <span>Kopā:</span>
-                            <span className="oswald" style={{ color: "var(--ice)" }}>{tPts(side)} pts</span>
+                            <span>Σ skill:</span>
+                            <span className="oswald" style={{ color: "var(--gold)" }}>⚡{tSkill(side)}</span>
                           </div>
                         </div>
                       </div>
