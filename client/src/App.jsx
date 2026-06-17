@@ -405,11 +405,11 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
                       <PosBadges p={p} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {p.guest && <span title="Svešais / +1" style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
+                          {!!p.guest && <span title="Svešais / +1" style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
                         </div>
                         <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.guest ? "svešais" : `${p.pts} pts`}{isSuper ? ` · ⚡${skillOf(p)}` : ""}</div>
                       </div>
-                      {isAdmin && p.guest && (
+                      {isAdmin && !!p.guest && (
                         <button title="Noņemt svešo" onClick={e => { e.stopPropagation(); removeGuest(p.id); }}
                           style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 2 }}>×</button>
                       )}
@@ -458,7 +458,7 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
                               {isAdmin && side === "black" && <button className="btn btn-sm btn-o" style={{ padding: "3px 8px" }} onClick={() => swap(p.id, "black")}>←</button>}
                               <PosBadges p={p} />
                               <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
-                                {p.guest && <span style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
+                                {!!p.guest && <span style={{ color: "var(--gold)" }}>+1 </span>}{p.name}
                               </span>
                               <span style={{ marginRight: isAdmin && side === "white" ? 4 : 0 }}>
                                 {isSuper ? <SkillChip value={skillOf(p)} /> : <span className="oswald" style={{ fontSize: 13, color: "var(--ice)" }}>{p.pts}</span>}
@@ -597,7 +597,7 @@ function Calendar({ allGames, isAdmin, onGamesChange }) {
                           <button className="btn btn-sm btn-r" onClick={() => setCnOpen(isCnOpen ? null : g.id)}>Atcelt</button>
                         </>
                       )}
-                      {g.cancelled && <button className="btn btn-sm btn-g" onClick={() => update(g.id, { cancelled: 0, cancel_note: "" })}>Atjaunot</button>}
+                      {!!g.cancelled && <button className="btn btn-sm btn-g" onClick={() => update(g.id, { cancelled: 0, cancel_note: "" })}>Atjaunot</button>}
                     </div>
                   )}
                 </div>
