@@ -46,6 +46,13 @@ export function autoSplit(playerList) {
   return { white: w, black: b };
 }
 
+// Win rate as a percentage of games played (wins / gp)
+export function winPct(p) {
+  const gp = Number(p?.gp) || 0;
+  if (gp <= 0) return 0;
+  return Math.round((Number(p?.wins) || 0) / gp * 100);
+}
+
 export function fmt(ds, mode = "full") {
   if (!ds) return "";
   const d = new Date(ds + "T12:00:00");

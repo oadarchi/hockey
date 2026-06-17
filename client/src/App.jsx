@@ -1,7 +1,7 @@
 // client/src/App.jsx
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { auth, players as playersApi, games as gamesApi, seasons as seasonsApi } from "./utils/api.js";
-import { autoSplit, fmt, POS_META, posList, skillOf, SKILL_DEFAULT } from "./utils/helpers.js";
+import { autoSplit, fmt, POS_META, posList, skillOf, SKILL_DEFAULT, winPct } from "./utils/helpers.js";
 
 // ── Logo (base64 embedded so no external file needed) ────────────────────────
 // Replace LOGO_PLACEHOLDER with your base64 PNG:
@@ -193,6 +193,7 @@ function Standings({ seasonId, allGames }) {
               <thead><tr>
                 <th style={{ width: 32 }}>#</th><th>Spēlētājs</th><th>Poz.</th>
                 <th className="r">Pts</th>
+                <th className="r" style={{ color: "var(--ice)" }}>Uzv%</th>
                 <th className="r mob-hide">Sp.</th>
                 <th className="r mob-hide" style={{ color: "var(--grn)" }}>U</th>
                 <th className="r mob-hide" style={{ color: "var(--gold)" }}>N</th>
@@ -208,6 +209,7 @@ function Standings({ seasonId, allGames }) {
                     </td>
                     <td><PosBadges p={p} /></td>
                     <td className="r"><span className="pts-big">{p.pts}</span></td>
+                    <td className="r oswald" style={{ color: "var(--ice)", fontWeight: 600 }} title={`${p.wins} uzvaras / ${p.gp} spēles`}>{p.gp ? `${winPct(p)}%` : "—"}</td>
                     <td className="r mob-hide" style={{ color: "var(--muted)" }}>{p.gp}</td>
                     <td className="r mob-hide" style={{ color: "var(--grn)", fontWeight: 600 }}>{p.wins}</td>
                     <td className="r mob-hide" style={{ color: "var(--gold)" }}>{p.draws}</td>
@@ -672,7 +674,9 @@ function Archive({ seasonId }) {
             <table className="tbl">
               <thead><tr>
                 <th style={{ width: 32 }}>#</th><th>Spēlētājs</th><th>Poz.</th>
-                <th className="r">Pts</th><th className="r">Sp.</th>
+                <th className="r">Pts</th>
+                <th className="r" style={{ color: "var(--ice)" }}>Uzv%</th>
+                <th className="r">Sp.</th>
                 <th className="r" style={{ color: "var(--grn)" }}>U</th>
                 <th className="r" style={{ color: "var(--gold)" }}>N</th>
                 <th className="r" style={{ color: "var(--red)" }}>Z</th>
@@ -684,6 +688,7 @@ function Archive({ seasonId }) {
                     <td style={{ fontWeight: 500 }}>{p.name}{i === 0 && <span style={{ marginLeft: 8, fontSize: 10, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>★ LĪDERIS</span>}</td>
                     <td><PosBadges p={p} /></td>
                     <td className="r"><span className="pts-big">{p.pts}</span></td>
+                    <td className="r oswald" style={{ color: "var(--ice)", fontWeight: 600 }} title={`${p.wins} uzvaras / ${p.gp} spēles`}>{p.gp ? `${winPct(p)}%` : "—"}</td>
                     <td className="r" style={{ color: "var(--muted)" }}>{p.gp}</td>
                     <td className="r" style={{ color: "var(--grn)", fontWeight: 600 }}>{p.wins}</td>
                     <td className="r" style={{ color: "var(--gold)" }}>{p.draws}</td>
