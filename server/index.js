@@ -256,7 +256,7 @@ app.get("/api/games/:id", (req, res) => {
     JOIN   players p   ON p.id = gp.player_id
     LEFT JOIN player_stats ps ON ps.player_id = p.id AND ps.season_id = ?
     WHERE  gp.game_id = ?
-    ORDER  BY gp.team, p.skill DESC, ps.pts DESC
+    ORDER  BY gp.team, (p.position = 'G') DESC, p.skill DESC, ps.pts DESC
   `).all(game.season_id, game.id);
 
   res.json({

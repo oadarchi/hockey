@@ -1,7 +1,7 @@
 // client/src/App.jsx
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { auth, players as playersApi, games as gamesApi, seasons as seasonsApi } from "./utils/api.js";
-import { autoSplit, fmt, POS_META, posList, skillOf, SKILL_DEFAULT, winPct } from "./utils/helpers.js";
+import { autoSplit, fmt, POS_META, posList, skillOf, SKILL_DEFAULT, winPct, isGoalie } from "./utils/helpers.js";
 
 // ── Logo (base64 embedded so no external file needed) ────────────────────────
 // Replace LOGO_PLACEHOLDER with your base64 PNG:
@@ -153,16 +153,32 @@ function Standings({ seasonId, allGames }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState(""), [pf, setPf] = useState("");
+  const [sort, setSort] = useState({ key: "pts", dir: "desc" });
 
   useEffect(() => {
     setLoading(true);
     playersApi.list(seasonId).then(setList).finally(() => setLoading(false));
   }, [seasonId]);
 
+  const sortVal = (p, key) => key === "name" ? p.name.toLowerCase() : key === "winpct" ? winPct(p) : (p[key] ?? 0);
+  const toggleSort = key => setSort(s => s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" ? "asc" : "desc" });
+
   const filtered = useMemo(() =>
-    list.filter(p => p.active && (!pf || p.position === pf) && p.name.toLowerCase().includes(q.toLowerCase()))
-      .sort((a, b) => b.pts - a.pts || b.gp - a.gp),
-    [list, q, pf]);
+    list.filter(p => p.active && (!pf || posList(p).includes(pf)) && p.name.toLowerCase().includes(q.toLowerCase()))
+      .sort((a, b) => {
+        const va = sortVal(a, sort.key), vb = sortVal(b, sort.key);
+        const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+        // tie-break by points so equal values stay sensible
+        return (sort.dir === "asc" ? cmp : -cmp) || (b.pts - a.pts);
+      }),
+    [list, q, pf, sort]);
+
+  const SortTh = ({ k, label, cls, color }) => (
+    <th className={cls} onClick={() => toggleSort(k)} style={{ cursor: "pointer", userSelect: "none", color }} title="Šķirot">
+      {label}{sort.key === k ? <span style={{ marginLeft: 3, color: "var(--blue)" }}>{sort.dir === "asc" ? "▲" : "▼"}</span> : <span style={{ marginLeft: 3, opacity: .3 }}>↕</span>}
+    </th>
+  );
+  const isPtsLeader = sort.key === "pts" && sort.dir === "desc";
 
   const played = allGames.filter(g => g.status === "played").length;
   const upcoming = allGames.filter(g => !g.cancelled && g.status === "upcoming").length;
@@ -191,13 +207,13 @@ function Standings({ seasonId, allGames }) {
           <div className="tbl-wrap">
             <table className="tbl">
               <thead><tr>
-                <th style={{ width: 32 }}>#</th><th>Spēlētājs</th><th>Poz.</th>
-                <th className="r">Pts</th>
-                <th className="r" style={{ color: "var(--ice)" }}>Uzv%</th>
-                <th className="r mob-hide">Sp.</th>
-                <th className="r mob-hide" style={{ color: "var(--grn)" }}>U</th>
-                <th className="r mob-hide" style={{ color: "var(--gold)" }}>N</th>
-                <th className="r mob-hide" style={{ color: "var(--red)" }}>Z</th>
+                <th style={{ width: 32 }}>#</th><SortTh k="name" label="Spēlētājs" /><th>Poz.</th>
+                <SortTh k="pts" label="Pts" cls="r" />
+                <SortTh k="winpct" label="Uzv%" cls="r" color="var(--ice)" />
+                <SortTh k="gp" label="Sp." cls="r mob-hide" />
+                <SortTh k="wins" label="U" cls="r mob-hide" color="var(--grn)" />
+                <SortTh k="draws" label="N" cls="r mob-hide" color="var(--gold)" />
+                <SortTh k="losses" label="Z" cls="r mob-hide" color="var(--red)" />
               </tr></thead>
               <tbody>
                 {filtered.map((p, i) => (
@@ -205,7 +221,7 @@ function Standings({ seasonId, allGames }) {
                     <td className="oswald" style={{ fontWeight: 600, color: "var(--muted)" }}>{i + 1}</td>
                     <td style={{ fontWeight: 500 }}>
                       {p.name}
-                      {i === 0 && <span style={{ marginLeft: 8, fontSize: 10, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>★ LĪDERIS</span>}
+                      {isPtsLeader && i === 0 && <span style={{ marginLeft: 8, fontSize: 10, color: "var(--gold)", fontFamily: "Oswald,sans-serif", letterSpacing: 1 }}>★ LĪDERIS</span>}
                     </td>
                     <td><PosBadges p={p} /></td>
                     <td className="r"><span className="pts-big">{p.pts}</span></td>
@@ -450,7 +466,7 @@ function GameDay({ seasonId, allGames, allPlayers, isAdmin, isSuper, onGamesChan
                       <div key={side} className="card">
                         <div className={`t-hdr ${hdrCls}`}>{label}</div>
                         <div style={{ padding: "10px 0" }}>
-                          {(teams[side] || []).map(p => (
+                          {[...(teams[side] || [])].sort((a, b) => (isGoalie(b) ? 1 : 0) - (isGoalie(a) ? 1 : 0)).map(p => (
                             <div key={p.id} className={`t-row t-row-${side === "white" ? "w" : "b"}`}>
                               {isAdmin && side === "black" && <button className="btn btn-sm btn-o" style={{ padding: "3px 8px" }} onClick={() => swap(p.id, "black")}>←</button>}
                               <PosBadges p={p} />
